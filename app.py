@@ -52,7 +52,8 @@ if uploaded_file is not None:
     filename = uploaded_file.name.lower()
     if uploaded_file.type.startswith("image/") or any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]):
         st.success("✅ 이미지가 정상적으로 등록되었습니다!")
-        st.image(uploaded_file, caption="📷 등록된 엔트리 화면 미리보기", use_column_width=True)
+        # use_container_width=True 로 수정하여 TypeError 해결
+        st.image(uploaded_file, caption="📷 등록된 엔트리 화면 미리보기", use_container_width=True)
     elif filename.endswith(".ent"):
         st.success(f"✅ 엔트리 프로젝트 파일 등록 완료: {uploaded_file.name}")
 
