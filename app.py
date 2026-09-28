@@ -2,15 +2,17 @@ import io
 import json
 import tarfile
 import zipfile
+import base64
 from google import genai
 from PIL import Image
 import streamlit as st
 
 # 페이지 기본 설정
 st.set_page_config(
-    page_title="🤖 엔트리 AI 학습 도우미", page_icon="🤖", layout="centered"
+    page_title="🤖 엔트리 AI 학습 도우미",
+    page_icon="🤖",
+    layout="centered"
 )
-
 
 # 엔트리 .ent 파일 분석 함수
 def extract_entry_json(file_bytes: bytes) -> dict:
@@ -34,59 +36,104 @@ def extract_entry_json(file_bytes: bytes) -> dict:
         pass
     return None
 
-
-# UI 화면 구성
 st.title("🤖 엔트리 AI 학습 도우미")
 st.write("중학교 1학년 정보 수업 전담 AI 선생님입니다.")
 
-# 1. 파일/캡처 업로드 영역
 st.subheader("1. 화면 캡처 또는 파일(.ent) 등록")
 
-# Streamlit의 camera_input과 file_uploader 활용
-tab1, tab2 = st.tabs(["📸 바로 화면/카메라 캡처", "📂 파일 업로드 (.ent / 이미지)"])
+# 카메라 제거 / 캡처 및 업로드 탭 구성
+tab1, tab2 = st.tabs(["📸 바로 화면 캡처하기", "📂 파일 업로드 (.ent / 이미지)"])
 
+captured_image_bytes = None
 uploaded_file = None
-captured_image = None
 
 with tab1:
-    captured_image = st.camera_input("화면이나 엔트리 블록을 촬영해 주세요")
+    st.write("버튼을 누른 후 **엔트리 화면(창 또는 탭)**을 선택하여 캡처하세요.")
+    
+    # HTML5 Screen Capture API를 활용한 브라우저 화면 캡처 Component
+    html_code = """
+    <div style="text-align: center; margin-bottom: 10px;">
+        <button id="capBtn" onclick="startCapture()" style="
+            background-color: #0d9488; color: white; border: none; padding: 12px 20px;
+            font-size: 15px; font-weight: bold; border-radius: 8px; cursor: pointer; width: 100%;">
+            📸 엔트리 화면 선택 및 캡처하기
+        </button>
+    </div>
+    <div id="status" style="text-align: center; color: #0d9488; font-size: 14px; margin-top: 5px;"></div>
+
+    <script>
+    async function startCapture() {
+        const statusDiv = document.getElementById('status');
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            await video.play();
+
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            stream.getTracks().forEach(track => track.stop());
+
+            const dataUrl = canvas.toDataURL('image/png');
+            statusDiv.innerText = "✅ 화면 캡처가 완료되었습니다! 아래 제출 버튼을 누르세요.";
+
+            // Streamlit에 캡처 데이터 전달
+            window.parent.postMessage({
+                type: 'streamlit:setComponentValue',
+                value: dataUrl
+            }, '*');
+
+        } catch (err) {
+            if (err.name !== 'NotAllowedError') {
+                statusDiv.innerText = "캡처 중 오류가 발생했습니다: " + err.message;
+            }
+        }
+    }
+    </script>
+    """
+    
+    # Custom Component 실행
+    capture_data = st.components.v1.html(html_code, height=100)
+    
+    # 캡처 결과 처리
+    if capture_data and isinstance(capture_data, str) and capture_data.startswith("data:image"):
+        img_data = capture_data.split(",")[1]
+        captured_image_bytes = base64.b64decode(img_data)
+        st.image(captured_image_bytes, caption="캡처된 엔트리 화면 미리보기", use_column_width=True)
 
 with tab2:
     uploaded_file = st.file_uploader(
         "엔트리 프로젝트 파일(.ent) 또는 이미지를 선택하세요",
-        type=["ent", "png", "jpg", "jpeg", "webp"],
+        type=["ent", "png", "jpg", "jpeg", "webp"]
     )
 
-# 2. 질문 입력 영역
 st.subheader("2. 고민이나 질문 입력")
 student_question = st.text_area(
     "질문 내용",
-    placeholder="예: 반복문을 썼는데 캐릭터가 중간에 멈춰요! 어디가 잘못된 걸까요?",
+    placeholder="예: 반복문을 썼는데 캐릭터가 중간에 멈춰요! 어디가 잘못된 걸까요?"
 )
 
-# AI 제출 버튼
 if st.button("💡 AI 선생님에게 힌트 요청하기", type="primary"):
-    # Streamlit Secrets에서 API 키 로드
     if "GEMINI_API_KEY" not in st.secrets:
-        st.error(
-            "API 키가 설정되지 않았습니다. Streamlit Secrets 설정을 확인해 주세요."
-        )
+        st.error("API 키가 설정되지 않았습니다. Streamlit Secrets 설정을 확인해 주세요.")
         st.stop()
 
     api_key = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=api_key)
 
-    target_file = captured_image or uploaded_file
-
-    if not target_file:
-        st.warning("화면을 캡처하거나 파일을 업로드해 주세요!")
+    if not captured_image_bytes and not uploaded_file:
+        st.warning("엔트리 화면을 캡처하거나 파일(.ent/이미지)을 업로드해 주세요!")
         st.stop()
 
     if not student_question.strip():
         st.warning("질문을 입력해 주세요!")
         st.stop()
 
-    # 프롬프트 가드레일 설정
+    # 중1 정보 교과 가드레일 프롬프트
     system_prompt = f"""
 너는 대한민국 중학교 1학년 학생들을 위한 친절하고 따뜻한 '정보(컴퓨터) 교과 전담 AI 선생님'이야.
 
@@ -108,35 +155,32 @@ if st.button("💡 AI 선생님에게 힌트 요청하기", type="primary"):
 
     with st.spinner("🤖 AI 선생님이 코드를 분석하고 힌트를 작성 중입니다..."):
         try:
-            file_bytes = target_file.getvalue()
-            filename = target_file.name.lower()
+            prompt_contents = []
 
-            if (
-                captured_image
-                or target_file.type.startswith("image/")
-                or any(
-                    filename.endswith(ext)
-                    for ext in [".png", ".jpg", ".jpeg", ".webp"]
-                )
-            ):
-                image = Image.open(io.BytesIO(file_bytes))
-                prompt_contents = [
-                    image,
-                    system_prompt + "\n\n[첨부 자료]: 학생이 제출한 이미지입니다.",
-                ]
-            elif filename.endswith(".ent"):
-                entry_data = extract_entry_json(file_bytes)
-                if not entry_data:
-                    st.error(".ent 파일 분석에 실패했습니다.")
-                    st.stop()
-                json_str = json.dumps(entry_data, ensure_ascii=False, indent=2)
-                prompt_contents = [
-                    system_prompt
-                    + f"\n\n[학생의 엔트리 프로젝트 JSON]\n{json_str[:4000]}"
-                ]
+            # 1순위: 화면 캡처 이미지 처리
+            if captured_image_bytes:
+                image = Image.open(io.BytesIO(captured_image_bytes))
+                prompt_contents = [image, system_prompt + "\n\n[첨부 자료]: 학생이 화면에서 캡처한 엔트리 실행/블록 이미지입니다."]
+            
+            # 2순위: 업로드된 파일 처리
+            elif uploaded_file:
+                file_bytes = uploaded_file.getvalue()
+                filename = uploaded_file.name.lower()
+
+                if uploaded_file.type.startswith("image/") or any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]):
+                    image = Image.open(io.BytesIO(file_bytes))
+                    prompt_contents = [image, system_prompt + "\n\n[첨부 자료]: 학생이 업로드한 이미지입니다."]
+                elif filename.endswith(".ent"):
+                    entry_data = extract_entry_json(file_bytes)
+                    if not entry_data:
+                        st.error(".ent 파일 분석에 실패했습니다.")
+                        st.stop()
+                    json_str = json.dumps(entry_data, ensure_ascii=False, indent=2)
+                    prompt_contents = [system_prompt + f"\n\n[학생의 엔트리 프로젝트 JSON]\n{json_str[:4000]}"]
 
             response = client.models.generate_content(
-                model="gemini-3.8-flash", contents=prompt_contents
+                model="gemini-3.8-flash",
+                contents=prompt_contents
             )
 
             st.success("📢 AI 선생님의 힌트")
