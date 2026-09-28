@@ -1,19 +1,17 @@
-import base64
 import io
 import json
 import tarfile
 import zipfile
+import streamlit as st
 from google import genai
 from PIL import Image
-import streamlit as st
 
 # 페이지 기본 설정
 st.set_page_config(
     page_title="🤖 엔트리 AI 학습 도우미",
     page_icon="🤖",
-    layout="centered",
+    layout="centered"
 )
-
 
 # 엔트리 .ent 파일 분석 함수
 def extract_entry_json(file_bytes: bytes) -> dict:
@@ -37,104 +35,26 @@ def extract_entry_json(file_bytes: bytes) -> dict:
         pass
     return None
 
-
 st.title("🤖 엔트리 AI 학습 도우미")
 st.write("중학교 1학년 정보 수업 전담 AI 선생님입니다.")
 
 # 1. 파일/캡처 이미지 업로드 영역
 st.subheader("1. 캡처 이미지 또는 파일(.ent) 등록")
 
-col1, col2 = st.columns([1, 1])
+st.info("💡 **캡처 이미지 붙여넣기 안내**: `Win + Shift + S`로 화면을 캡처한 후, 아래 파일 업로드 상자를 클릭하고 **`Ctrl + V`**를 누르면 바로 등록됩니다!")
 
-# 파일 업로드
-with col1:
-    uploaded_file = st.file_uploader(
-        "📂 파일 선택 및 드래그 업로드",
-        type=["png", "jpg", "jpeg", "webp", "ent"],
-    )
-
-# 클립보드 붙여넣기 컴포넌트
-clipboard_image_bytes = None
-with col2:
-    st.write("📋 **캡처 이미지 붙여넣기**")
-    paste_html = """
-    <div style="margin-top: 5px;">
-        <button id="pasteBtn" onclick="pasteImage()" style="
-            background-color: #2563eb; color: white; border: none; padding: 10px 16px;
-            font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%;">
-            📋 클립보드 이미지 붙여넣기
-        </button>
-        <div id="pasteStatus" style="font-size: 12px; color: #16a34a; margin-top: 5px; text-align: center;"></div>
-    </div>
-
-    <script>
-    async function pasteImage() {
-        const statusDiv = document.getElementById('pasteStatus');
-        try {
-            const clipboardItems = await navigator.clipboard.read();
-            let imageFound = false;
-
-            for (const item of clipboardItems) {
-                for (const type of item.types) {
-                    if (type.startsWith('image/')) {
-                        const blob = await item.getType(type);
-                        const reader = new FileReader();
-                        reader.onload = function(e) {
-                            const dataUrl = e.target.result;
-                            statusDiv.innerText = "✅ 클립보드 이미지 붙여넣기 완료!";
-                            window.parent.postMessage({
-                                type: 'streamlit:setComponentValue',
-                                value: dataUrl
-                            }, '*');
-                        };
-                        reader.readAsDataURL(blob);
-                        imageFound = true;
-                        break;
-                    }
-                }
-                if (imageFound) break;
-            }
-
-            if (!imageFound) {
-                statusDiv.style.color = "#dc2626";
-                statusDiv.innerText = "⚠️ 클립보드에 캡처된 이미지가 없습니다.";
-            }
-        } catch (err) {
-            statusDiv.style.color = "#dc2626";
-            statusDiv.innerText = "권한 허용이 필요합니다 (또는 Ctrl+V 지원).";
-        }
-    }
-    </script>
-    """
-    paste_data = st.components.v1.html(paste_html, height=85)
-
-    if (
-        paste_data
-        and isinstance(paste_data, str)
-        and paste_data.startswith("data:image")
-    ):
-        img_data = paste_data.split(",")[1]
-        clipboard_image_bytes = base64.b64decode(img_data)
+uploaded_file = st.file_uploader(
+    "📂 클릭하여 이미지/파일 선택 또는 Ctrl+V 붙여넣기",
+    type=["png", "jpg", "jpeg", "webp", "ent"],
+    help="컴퓨터 화면 캡처 후 클릭하여 Ctrl+V를 누르거나 drag&drop 하세요."
+)
 
 # 등록된 자료 미리보기
-if clipboard_image_bytes:
-    st.success("✅ 클립보드에서 캡처 이미지를 불러왔습니다!")
-    st.image(
-        clipboard_image_bytes,
-        caption="📷 등록된 엔트리 화면 미리보기",
-        use_container_width=True,
-    )
-elif uploaded_file is not None:
+if uploaded_file is not None:
     filename = uploaded_file.name.lower()
-    if uploaded_file.type.startswith("image/") or any(
-        filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]
-    ):
+    if uploaded_file.type.startswith("image/") or any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]):
         st.success("✅ 이미지가 정상적으로 등록되었습니다!")
-        st.image(
-            uploaded_file,
-            caption="📷 등록된 엔트리 화면 미리보기",
-            use_container_width=True,
-        )
+        st.image(uploaded_file, caption="📷 등록된 엔트리 화면 미리보기", use_container_width=True)
     elif filename.endswith(".ent"):
         st.success(f"✅ 엔트리 프로젝트 파일 등록 완료: {uploaded_file.name}")
 
@@ -142,21 +62,19 @@ elif uploaded_file is not None:
 st.subheader("2. 고민이나 질문 입력")
 student_question = st.text_area(
     "질문 내용",
-    placeholder="예: 파랑에 닿으면 오른쪽으로 회전하고 싶은데 방법을 알려줘.",
+    placeholder="예: 파랑에 닿으면 오른쪽으로 회전하고 싶은데 방법을 알려줘."
 )
 
 # 제출 버튼
 if st.button("💡 AI 선생님에게 힌트 요청하기", type="primary"):
     if "GEMINI_API_KEY" not in st.secrets:
-        st.error(
-            "API 키가 설정되지 않았습니다. Streamlit Secrets 설정을 확인해 주세요."
-        )
+        st.error("API 키가 설정되지 않았습니다. Streamlit Secrets 설정을 확인해 주세요.")
         st.stop()
 
     api_key = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=api_key)
 
-    if not clipboard_image_bytes and not uploaded_file:
+    if not uploaded_file:
         st.warning("엔트리 화면 캡처 이미지나 파일(.ent)을 등록해 주세요!")
         st.stop()
 
@@ -186,46 +104,24 @@ if st.button("💡 AI 선생님에게 힌트 요청하기", type="primary"):
 
     with st.spinner("🤖 AI 선생님이 코드를 분석하고 힌트를 작성 중입니다..."):
         try:
+            file_bytes = uploaded_file.getvalue()
+            filename = uploaded_file.name.lower()
             prompt_contents = []
 
-            # 1순위: 클립보드 붙여넣기 이미지
-            if clipboard_image_bytes:
-                image = Image.open(io.BytesIO(clipboard_image_bytes))
-                prompt_contents = [
-                    image,
-                    system_prompt
-                    + "\n\n[첨부 자료]: 학생이 붙여넣은 캡처 이미지입니다.",
-                ]
-            # 2순위: 업로드 파일 (.ent / 이미지)
-            elif uploaded_file:
-                file_bytes = uploaded_file.getvalue()
-                filename = uploaded_file.name.lower()
-
-                if uploaded_file.type.startswith("image/") or any(
-                    filename.endswith(ext)
-                    for ext in [".png", ".jpg", ".jpeg", ".webp"]
-                ):
-                    image = Image.open(io.BytesIO(file_bytes))
-                    prompt_contents = [
-                        image,
-                        system_prompt
-                        + "\n\n[첨부 자료]: 학생이 업로드한 이미지입니다.",
-                    ]
-                elif filename.endswith(".ent"):
-                    entry_data = extract_entry_json(file_bytes)
-                    if not entry_data:
-                        st.error(".ent 파일 분석에 실패했습니다.")
-                        st.stop()
-                    json_str = json.dumps(
-                        entry_data, ensure_ascii=False, indent=2
-                    )
-                    prompt_contents = [
-                        system_prompt
-                        + f"\n\n[학생의 엔트리 프로젝트 JSON]\n{json_str[:4000]}"
-                    ]
+            if uploaded_file.type.startswith("image/") or any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]):
+                image = Image.open(io.BytesIO(file_bytes))
+                prompt_contents = [image, system_prompt + "\n\n[첨부 자료]: 학생이 제출한 캡처 이미지입니다."]
+            elif filename.endswith(".ent"):
+                entry_data = extract_entry_json(file_bytes)
+                if not entry_data:
+                    st.error(".ent 파일 분석에 실패했습니다.")
+                    st.stop()
+                json_str = json.dumps(entry_data, ensure_ascii=False, indent=2)
+                prompt_contents = [system_prompt + f"\n\n[학생의 엔트리 프로젝트 JSON]\n{json_str[:4000]}"]
 
             response = client.models.generate_content(
-                model="gemini-3.8-flash", contents=prompt_contents
+                model="gemini-3.8-flash",
+                contents=prompt_contents
             )
 
             st.success("📢 AI 선생님의 힌트")
